@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.Composition;
+using System.Drawing;
 using System.Windows.Forms;
 using vatsys;
 using vatsys.Plugin;
@@ -8,7 +9,7 @@ namespace FullscreenPlugin;
 [Export(typeof(IPlugin))]
 public class Plugin : IPlugin
 {
-    FormBorderStyle? _originalBorderStyle;
+    bool _isFullscreen;
     
     public string Name => "Fullscreen Plugin";
     
@@ -41,17 +42,24 @@ public class Plugin : IPlugin
         var mainForm = Application.OpenForms["MainForm"];
         if (mainForm is null)
         {
-            throw new Exception("Cannot find MainForm.");
+            throw new Exception("Cannot find MainForm");
         }
 
-        _originalBorderStyle ??= mainForm.FormBorderStyle;
-
-        mainForm.FormBorderStyle = mainForm.FormBorderStyle == FormBorderStyle.None
-            ? _originalBorderStyle.Value
-            : FormBorderStyle.None;
-
-        mainForm.WindowState = mainForm.WindowState == FormWindowState.Normal
-            ? FormWindowState.Maximized
-            : FormWindowState.Normal;
+        if (!_isFullscreen)
+        {
+            // Stupid WinForms bug means we set WindowState twice
+            // https://stackoverflow.com/a/32821243
+            mainForm.WindowState = FormWindowState.Normal;
+            mainForm.FormBorderStyle = FormBorderStyle.None;
+            mainForm.WindowState = FormWindowState.Maximized;
+            
+            _isFullscreen = true;
+        }
+        else
+        {
+            mainForm.FormBorderStyle = FormBorderStyle.FixedSingle;
+            mainForm.WindowState = FormWindowState.Normal;
+            _isFullscreen = false;
+        }
     }
 }
