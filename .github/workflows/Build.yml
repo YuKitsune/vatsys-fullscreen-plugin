@@ -36,3 +36,8 @@ jobs:
           key: ${{ runner.os }}-${{ hashFiles('**/global.json', '**/*.csproj', '**/Directory.Packages.props') }}
       - name: 'Run: Compile'
         run: ./build.cmd Compile
+      - name: 'Publish: msiexec.log'
+        uses: actions/upload-artifact@v4
+        with:
+          name: msiexec.log
+          path: .nuke/temp/msiexec.log

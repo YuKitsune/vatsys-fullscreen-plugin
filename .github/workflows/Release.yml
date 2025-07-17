@@ -43,6 +43,11 @@ jobs:
         run: ./build.cmd Release
         env:
           GithubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: 'Publish: msiexec.log'
+        uses: actions/upload-artifact@v4
+        with:
+          name: msiexec.log
+          path: .nuke/temp/msiexec.log
       - name: 'Publish: .build'
         uses: actions/upload-artifact@v4
         with:
