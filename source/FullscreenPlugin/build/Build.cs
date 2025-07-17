@@ -97,7 +97,7 @@ class Build : NukeBuild
                 ?? throw new Exception("msiexec not found in system PATH");
             
             var msiexec = ToolResolver.GetTool(msiExecFile);
-            msiexec($"/a \"{msiFile}\" /quiet TARGETDIR=\"{installDir}\"");
+            msiexec($"/i \"{msiFile}\" /quiet ALLUSERS=2 MSIINSTALLPERUSER=1 TARGETDIR=\"{installDir}\"");
         });
 
     Target Compile => _ => _
