@@ -153,7 +153,12 @@ class Build : NukeBuild
         .Executes(() =>
         {
             var version = GitVersion.MajorMinorPatch;
+            
+            // Delete the existing "latest" tag
             GitTasks.Git("tag -d latest");
+            GitTasks.Git("push origin --tags");
+            
+            // Create a new tag for the current version and set "latest" to point to it
             GitTasks.Git($"tag {version}");
             GitTasks.Git($"tag latest");
             GitTasks.Git("push origin --tags");
