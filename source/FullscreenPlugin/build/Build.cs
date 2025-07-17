@@ -78,8 +78,11 @@ class Build : NukeBuild
             }
         });
     
+    AbsolutePath MsiExecLogFile => TemporaryDirectory / "msiexec.log";
+    
     Target InstallVatSys => _ => _
         .OnlyWhenDynamic(() => !VatSysIsInstalled)
+        .Produces(MsiExecLogFile)
         .Executes(async () =>
         {
             var zipPath = TemporaryDirectory / "vatsys.zip";
@@ -97,7 +100,7 @@ class Build : NukeBuild
                 ?? throw new Exception("msiexec not found in system PATH");
             
             var msiexec = ToolResolver.GetTool(msiExecFile);
-            msiexec($"/i \"{msiFile}\" /quiet ALLUSERS=2 MSIINSTALLPERUSER=1 TARGETDIR=\"{installDir}\"");
+            msiexec($"/i \"{msiFile}\" /lv \"{MsiExecLogFile}\" /quiet ALLUSERS=2 MSIINSTALLPERUSER=1 TARGETDIR=\"{installDir}\"");
         });
 
     Target Compile => _ => _
