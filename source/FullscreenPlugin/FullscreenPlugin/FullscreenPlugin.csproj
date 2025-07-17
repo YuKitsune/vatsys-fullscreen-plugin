@@ -7,7 +7,7 @@
         <LangVersion>latest</LangVersion>
         <BaseOutputPath>$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys@Path)\bin\Plugins\FullscreenPlugin - Debug</BaseOutputPath>
 
-        <Version>0.0.0</Version>
+        <Version>0.1.2</Version>
         <Metadata Condition="'$(BuildMetadata)' != ''">+$(BuildMetadata)</Metadata>
         <AssemblyVersion>$(Version)</AssemblyVersion>
         <FileVersion>$(Version)</FileVersion>

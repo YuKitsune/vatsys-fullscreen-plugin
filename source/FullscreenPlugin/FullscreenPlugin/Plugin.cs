@@ -10,15 +10,13 @@ namespace FullscreenPlugin;
 [Export(typeof(IPlugin))]
 public class Plugin : IPlugin
 {
+    static readonly Version Version = new(0, 1, 2);
+    static readonly string VersionUrl = "https://raw.githubusercontent.com/YuKitsune/vatsys-fullscreen-plugin/refs/heads/main/source/FullscreenPlugin/FullscreenPlugin/Version.json";
+    static readonly HttpClient HttpClient = new();
+    
     bool _isFullscreen;
     
     public string Name => "Fullscreen Plugin";
-
-    private static readonly Version _version = new(0, 1, 1);
-
-    private static readonly string _versionUrl = "https://raw.githubusercontent.com/YuKitsune/vatsys-fullscreen-plugin/refs/heads/main/source/FullscreenPlugin/FullscreenPlugin/Version.json";
-
-    private static readonly HttpClient _httpClient = new();
 
     public void OnFDRUpdate(FDP2.FDR updated) { }
 
@@ -31,23 +29,26 @@ public class Plugin : IPlugin
         _ = CheckVersion();
     }
 
-    private async Task CheckVersion()
+    async Task CheckVersion()
     {
         try
         {
-            var response = await _httpClient.GetStringAsync(_versionUrl);
-
+            var response = await HttpClient.GetStringAsync(VersionUrl);
             var onlineVersion = JsonConvert.DeserializeObject<Version>(response);
+            if (onlineVersion == null)
+                return;
 
-            if (onlineVersion == null) return;
-
-            if (onlineVersion.Major == _version.Major &&
-                onlineVersion.Minor == _version.Minor &&
-                onlineVersion.Build == _version.Build) return;
+            if (onlineVersion.Major == Version.Major &&
+                onlineVersion.Minor == Version.Minor &&
+                onlineVersion.Build == Version.Build)
+                return;
 
             Errors.Add(new Exception("A new version of the plugin is available."), Name);
         }
-        catch { }
+        catch
+        {
+            // Ignored
+        }
     }
 
     void AddMenuItem()
