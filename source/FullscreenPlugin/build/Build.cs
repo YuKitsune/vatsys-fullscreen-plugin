@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using JetBrains.Annotations;
 using Microsoft.Win32;
 using Nuke.Common;
@@ -30,6 +31,7 @@ using Serilog;
     FetchDepth = 0,
     WritePermissions = [GitHubActionsPermissions.Contents]
 )]
+[SupportedOSPlatform("windows")]
 class Build : NukeBuild
 {
     /// Support plugins are available for:
@@ -47,7 +49,7 @@ class Build : NukeBuild
     AbsolutePath OutputDirectory => RootDirectory / ".build";
     AbsolutePath ZipFile => OutputDirectory / $"FullscreenPlugin.{GitVersion.FullSemVer}.zip";
     
-    [CanBeNull] AbsolutePath VatSysInstallDirectory => Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys", "Path", null).ToString();
+    [CanBeNull] AbsolutePath VatSysInstallDirectory => Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys", "Path", null)?.ToString();
     bool VatSysIsInstalled => !string.IsNullOrEmpty(VatSysInstallDirectory) && VatSysInstallDirectory.Exists();
     [CanBeNull] AbsolutePath DebugOutputDirectory => VatSysInstallDirectory / "bin" / "Plugins" / "FullscreenPlugin - Debug";
 
