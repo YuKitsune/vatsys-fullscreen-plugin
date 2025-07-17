@@ -76,7 +76,7 @@ class Build : NukeBuild
         });
     
     Target InstallVatSys => _ => _
-        .OnlyWhenDynamic(() => VatSysIsInstalled)
+        .OnlyWhenDynamic(() => !VatSysIsInstalled)
         .Executes(async () =>
         {
             var zipPath = RootDirectory / "vatsys.zip";
