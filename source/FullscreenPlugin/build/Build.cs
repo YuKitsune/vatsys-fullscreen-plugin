@@ -26,7 +26,8 @@ using Serilog;
     GitHubActionsImage.WindowsLatest,
     OnPushBranches = ["main"],
     ImportSecrets = [nameof(GithubToken)],
-    InvokedTargets = [nameof(Release)]
+    InvokedTargets = [nameof(Release)],
+    FetchDepth = 0
 )]
 class Build : NukeBuild
 {
