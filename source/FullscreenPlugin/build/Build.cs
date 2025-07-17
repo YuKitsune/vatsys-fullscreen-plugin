@@ -27,7 +27,8 @@ using Serilog;
     OnPushBranches = ["main"],
     ImportSecrets = [nameof(GithubToken)],
     InvokedTargets = [nameof(Release)],
-    FetchDepth = 0
+    FetchDepth = 0,
+    WritePermissions = [GitHubActionsPermissions.Contents]
 )]
 class Build : NukeBuild
 {
