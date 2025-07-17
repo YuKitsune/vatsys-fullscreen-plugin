@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System.ComponentModel.Composition;
 using System.Net.Http;
+using System.Reflection;
 using System.Windows.Forms;
 using vatsys;
 using vatsys.Plugin;
@@ -10,8 +11,7 @@ namespace FullscreenPlugin;
 [Export(typeof(IPlugin))]
 public class Plugin : IPlugin
 {
-    static readonly Version Version = new(0, 1, 2);
-    static readonly string VersionUrl = "https://raw.githubusercontent.com/YuKitsune/vatsys-fullscreen-plugin/refs/heads/main/source/FullscreenPlugin/FullscreenPlugin/Version.json";
+    static readonly string VersionUrl = "https://raw.githubusercontent.com/YuKitsune/vatsys-fullscreen-plugin/refs/heads/main/Version.json";
     static readonly HttpClient HttpClient = new();
     
     bool _isFullscreen;
@@ -38,9 +38,21 @@ public class Plugin : IPlugin
             if (onlineVersion == null)
                 return;
 
-            if (onlineVersion.Major == Version.Major &&
-                onlineVersion.Minor == Version.Minor &&
-                onlineVersion.Build == Version.Build)
+            var version = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+                .InformationalVersion;
+            
+            if (string.IsNullOrEmpty(version))
+                return;
+
+            var parts = version!.Split('.', '+');
+            var major = int.Parse(parts[0]);
+            var minor = int.Parse(parts[1]);
+            var build = int.Parse(parts[2]);
+            
+            if (onlineVersion.Major == major &&
+                onlineVersion.Minor == minor &&
+                onlineVersion.Build == build)
                 return;
 
             Errors.Add(new Exception("A new version of the plugin is available."), Name);

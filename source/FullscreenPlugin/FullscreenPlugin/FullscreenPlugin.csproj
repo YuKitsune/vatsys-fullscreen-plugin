@@ -28,10 +28,4 @@
         <Reference Include="System.Windows.Forms" />
     </ItemGroup>
 
-    <ItemGroup>
-      <None Update="Version.json">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
-    </ItemGroup>
-
 </Project>
