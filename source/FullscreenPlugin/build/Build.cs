@@ -82,7 +82,7 @@ class Build : NukeBuild
         .OnlyWhenDynamic(() => !VatSysIsInstalled)
         .Executes(async () =>
         {
-            var zipPath = RootDirectory / "vatsys.zip";
+            var zipPath = TemporaryDirectory / "vatsys.zip";
             var installDir = TemporaryDirectory / "vatSys";
             installDir.CreateDirectory();
             
@@ -97,7 +97,7 @@ class Build : NukeBuild
                 ?? throw new Exception("msiexec not found in system PATH");
             
             var msiexec = ToolResolver.GetTool(msiExecFile);
-            msiexec($"/a \"{msiFile}\" /qb TARGETDIR=\"{installDir}\"");
+            msiexec($"/a \"{msiFile}\" /quiet TARGETDIR=\"{installDir}\"");
         });
 
     Target Compile => _ => _
