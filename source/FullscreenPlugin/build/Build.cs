@@ -145,11 +145,24 @@ class Build : NukeBuild
 
             Log.Information("Plugin installed to {PluginPath}", DebugOutputDirectory);
         });
+    
+    Target SetupGithubActor => _ => _
+        .Executes(() =>
+        {
+            var actor = Environment.GetEnvironmentVariable("GITHUB_ACTOR");
+            GitTasks.Git($"config --global user.name '{actor}'");
+            GitTasks.Git($"config --global user.email '{actor}@github.com'");
+            if (IsServerBuild)
+            {
+                GitTasks.Git($"remote set-url origin https://{actor}:{GithubToken}@github.com/{gitRepository.GetGitHubOwner()}/{gitRepository.GetGitHubName()}.git");
+            }
+        });
 
     Target TagRelease => _ => _
         .OnlyWhenDynamic(() => gitRepository.IsOnMainOrMasterBranch())
         .OnlyWhenDynamic(() => !string.IsNullOrWhiteSpace(GithubToken))
-        .Before(Compile)
+        .DependsOn(Package)
+        .DependsOn(SetupGithubActor)
         .Executes(() =>
         {
             var version = GitVersion.MajorMinorPatch;
@@ -162,18 +175,6 @@ class Build : NukeBuild
             GitTasks.Git($"tag {version}");
             GitTasks.Git($"tag latest");
             GitTasks.Git("push origin --tags");
-        });
-    
-    Target SetupGithubActor => _ => _
-        .Executes(() =>
-        {
-            var actor = Environment.GetEnvironmentVariable("GITHUB_ACTOR");
-            GitTasks.Git($"config --global user.name '{actor}'");
-            GitTasks.Git($"config --global user.email '{actor}@github.com'");
-            if (IsServerBuild)
-            {
-                GitTasks.Git($"remote set-url origin https://{actor}:{GithubToken}@github.com/{gitRepository.GetGitHubOwner()}/{gitRepository.GetGitHubName()}.git");
-            }
         });
 
     Target SetupGitHubClient => _ => _
