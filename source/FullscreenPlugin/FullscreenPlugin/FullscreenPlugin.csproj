@@ -5,13 +5,16 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <BaseOutputPath>$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys@Path)\bin\Plugins\FullscreenPlugin - Debug</BaseOutputPath>
 
-        <Version>0.1.2</Version>
+        <Version>0.0.0</Version>
         <Metadata Condition="'$(BuildMetadata)' != ''">+$(BuildMetadata)</Metadata>
         <AssemblyVersion>$(Version)</AssemblyVersion>
         <FileVersion>$(Version)</FileVersion>
         <InformationalVersion>$(Version)$(Metadata)</InformationalVersion>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <VatSysPath Condition="'$(VatSysPath)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys@Path)</VatSysPath>
     </PropertyGroup>
 
     <ItemGroup>
@@ -22,7 +25,7 @@
         <Reference Include="System.ComponentModel.Composition" />
         <Reference Include="System.Net.Http" />
         <Reference Include="vatSys">
-            <HintPath>$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys@Path)\bin\vatSys.exe</HintPath>
+            <HintPath>$(VatSysPath)\bin\vatSys.exe</HintPath>
             <Private>False</Private>
         </Reference>
         <Reference Include="System.Windows.Forms" />
