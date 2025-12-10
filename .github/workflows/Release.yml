@@ -9,17 +9,17 @@
 #
 #     - To trigger manual generation invoke:
 #
-#         nuke --generate-configuration GitHubActions_Release --host GitHubActions
+#         nuke --generate-configuration GitHubActions_release --host GitHubActions
 #
 # </auto-generated>
 # ------------------------------------------------------------------------------
 
-name: Release
+name: release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -42,14 +42,5 @@ jobs:
       - name: 'Run: Release'
         run: ./build.cmd Release
         env:
-          GithubToken: ${{ secrets.GITHUB_TOKEN }}
-      - name: 'Publish: msiexec.log'
-        uses: actions/upload-artifact@v4
-        with:
-          name: msiexec.log
-          path: .nuke/temp/msiexec.log
-      - name: 'Publish: .build'
-        uses: actions/upload-artifact@v4
-        with:
-          name: .build
-          path: .build
+          GitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

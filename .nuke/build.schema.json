@@ -24,15 +24,12 @@
     "ExecutableTarget": {
       "type": "string",
       "enum": [
-        "Clean",
         "Compile",
+        "DownloadVatSys",
         "Install",
-        "InstallVatSys",
         "Package",
         "Release",
-        "SetupGithubActor",
-        "SetupGitHubClient",
-        "TagRelease"
+        "Uninstall"
       ]
     },
     "Verbosity": {
@@ -114,10 +111,17 @@
             "Release"
           ]
         },
-        "GithubToken": {
+        "GitHubToken": {
           "type": "string",
-          "description": "Github Token",
+          "description": "GitHub token for creating releases",
           "default": "Secrets must be entered via 'nuke :secrets [profile]'"
+        },
+        "ProfileName": {
+          "type": "string"
+        },
+        "VatSysPath": {
+          "type": "string",
+          "description": "Path to vatSys installation"
         }
       }
     },

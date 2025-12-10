@@ -1,37 +1,35 @@
 using System;
 using System.IO;
-using System.Linq;
+using System.IO.Compression;
+using System.Net.Http;
 using System.Runtime.Versioning;
-using JetBrains.Annotations;
-using Microsoft.Win32;
 using Nuke.Common;
 using Nuke.Common.CI.GitHubActions;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
-using Nuke.Common.Tooling;
 using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Tools.Git;
 using Nuke.Common.Tools.GitHub;
 using Nuke.Common.Tools.GitVersion;
 using Octokit;
 using Serilog;
 
+[SupportedOSPlatform("Windows")]
 [GitHubActions(
-    "Build",
-    GitHubActionsImage.WindowsLatest,
-    OnPullRequestBranches = ["main"],
-    InvokedTargets = [nameof(Compile)]
-)]
-[GitHubActions(
-    "Release",
+    "build",
     GitHubActionsImage.WindowsLatest,
     OnPushBranches = ["main"],
-    ImportSecrets = [nameof(GithubToken)],
+    OnPullRequestBranches = ["main"],
+    InvokedTargets = [nameof(Compile)],
+    FetchDepth = 0)]
+[GitHubActions(
+    "release",
+    GitHubActionsImage.WindowsLatest,
+    OnPushTags = ["v*"],
     InvokedTargets = [nameof(Release)],
+    ImportSecrets = [nameof(GitHubToken)],
+    EnableGitHubToken = true,
     FetchDepth = 0,
-    WritePermissions = [GitHubActionsPermissions.Contents]
-)]
-[SupportedOSPlatform("windows")]
+    WritePermissions = [GitHubActionsPermissions.Contents])]
 class Build : NukeBuild
 {
     /// Support plugins are available for:
@@ -44,180 +42,243 @@ class Build : NukeBuild
 
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
-    
-    AbsolutePath PluginProjectFile => RootDirectory / "source" / "FullscreenPlugin" / "FullscreenPlugin" / "FullscreenPlugin.csproj";
-    AbsolutePath OutputDirectory => RootDirectory / ".build";
-    AbsolutePath ZipFile => OutputDirectory / $"FullscreenPlugin.{GitVersion.FullSemVer}.zip";
-    
-    [CanBeNull] AbsolutePath VatSysInstallDirectory => Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Sawbe\vatSys", "Path", null)?.ToString();
-    bool VatSysIsInstalled => !string.IsNullOrEmpty(VatSysInstallDirectory) && VatSysInstallDirectory.Exists();
-    [CanBeNull] AbsolutePath DebugOutputDirectory => VatSysInstallDirectory / "bin" / "Plugins" / "FullscreenPlugin - Debug";
+
+    [Parameter("GitHub token for creating releases")]
+    [Secret]
+    readonly string GitHubToken;
+
+    [GitRepository]
+    readonly GitRepository GitRepository;
 
     [GitVersion]
     readonly GitVersion GitVersion;
-    
-    [GitRepository]
-    readonly GitRepository gitRepository;
-    
-    GitHubClient gitHubClient;
-    
-    [Secret]
-    [Parameter("Github Token")]
-    readonly string GithubToken;
-    
-    Target Clean => _ => _
-        .Executes(() =>
-        {
-            Log.Information("Cleaning {OutputDirectory}", OutputDirectory);
-            OutputDirectory.CreateOrCleanDirectory();
-            
-            if (DebugOutputDirectory is not null)
-            {
-                Log.Information("Cleaning {debugOutputPath}", DebugOutputDirectory);
-                OutputDirectory.CreateOrCleanDirectory();
-            }
-        });
-    
-    Target InstallVatSys => _ => _
-        .OnlyWhenDynamic(() => !VatSysIsInstalled)
+
+    const string ReleasePluginName = "FullscreenPlugin";
+    const string DebugPluginName = "FullscreenPlugin - Debug";
+
+    string PluginName => Configuration == Configuration.Debug ? DebugPluginName : ReleasePluginName;
+
+    AbsolutePath PluginProjectPath => RootDirectory / "source" / "FullscreenPlugin" / "FullscreenPlugin" / "FullscreenPlugin.csproj";
+    AbsolutePath BuildOutputDirectory => TemporaryDirectory / "build";
+    AbsolutePath ZipPath => TemporaryDirectory / $"FullscreenPlugin.{GetSemanticVersion()}.zip";
+    AbsolutePath PackageDirectory => TemporaryDirectory / "package";
+
+    [Parameter]
+    string ProfileName { get; }
+
+    [Parameter("Path to vatSys installation")]
+    AbsolutePath VatSysPath { get; }
+
+    AbsolutePath VatSysSetupDirectory => TemporaryDirectory / "vatsys-setup";
+    AbsolutePath VatSysExePath => VatSysPath ?? VatSysSetupDirectory / "bin" / "vatSys.exe";
+
+    Target DownloadVatSys => _ => _
+        .OnlyWhenStatic(() => VatSysPath == null && !VatSysExePath.FileExists())
         .Executes(async () =>
         {
-            var zipPath = TemporaryDirectory / "vatsys.zip";
-            var installDir = TemporaryDirectory / "vatSys";
-            installDir.CreateDirectory();
-            
-            await HttpTasks.HttpDownloadFileAsync("https://vatsys.sawbe.com/downloads/vatSysSetup.zip", zipPath);
-            zipPath.UncompressTo(installDir);
-            
-            var msiFile = installDir.GlobFiles("**/vatSysSetup.msi").FirstOrDefault();
-            if (msiFile == null)
-                throw new Exception("vatSysSetup.msi not found after extraction.");
+            var vatSysSetupUrl = "https://vatsys.sawbe.com/downloads/vatSysSetup.zip";
+            var zipPath = TemporaryDirectory / "vatSysSetup.zip";
+            var msiPath = TemporaryDirectory / "vatSysSetup.msi";
 
-            var msiExecFile = ToolPathResolver.GetPathExecutable("msiexec")
-                ?? throw new Exception("msiexec not found in system PATH");
-            
-            var msiexec = ToolResolver.GetTool(msiExecFile);
-            msiexec($"/i \"{msiFile}\" /qn TARGETDIR=\"{installDir}\"");
+            Log.Information("Downloading vatSys from {Url}", vatSysSetupUrl);
+            using var httpClient = new HttpClient();
+            var response = await httpClient.GetAsync(vatSysSetupUrl);
+            response.EnsureSuccessStatusCode();
+            await using var fileStream = File.Create(zipPath);
+            await response.Content.CopyToAsync(fileStream);
+            fileStream.Close();
+
+            Log.Information("Extracting vatSysSetup.zip");
+            ZipFile.ExtractToDirectory(zipPath, TemporaryDirectory, overwriteFiles: true);
+
+            Log.Information("Extracting vatSysSetup.msi");
+            VatSysSetupDirectory.CreateOrCleanDirectory();
+
+            // Use msiexec to extract the MSI contents
+            var msiExtractProcess = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "msiexec",
+                Arguments = $"/a \"{msiPath}\" /qn TARGETDIR=\"{VatSysSetupDirectory}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+
+            if (msiExtractProcess != null)
+            {
+                await msiExtractProcess.WaitForExitAsync();
+                if (msiExtractProcess.ExitCode != 0)
+                {
+                    var error = await msiExtractProcess.StandardError.ReadToEndAsync();
+                    throw new Exception($"Failed to extract MSI: {error}");
+                }
+            }
+
+            if (!VatSysExePath.FileExists())
+                throw new Exception($"vatSys.exe not found at {VatSysExePath}");
+
+            Log.Information("vatSys.exe extracted to {Path}", VatSysExePath);
         });
 
     Target Compile => _ => _
-        .DependsOn(Clean)
-        .DependsOn(InstallVatSys)
+        .DependsOn(DownloadVatSys)
         .Executes(() =>
         {
+            var version = GetSemanticVersion();
             Log.Information(
                 "Building version {Version} with configuration {Configuration} to {OutputDirectory}",
-                GitVersion,
+                version,
                 Configuration,
-                OutputDirectory);
+                BuildOutputDirectory);
 
             DotNetTasks.DotNetBuild(s => s
-                .SetProjectFile(PluginProjectFile)
+                .SetProjectFile(PluginProjectPath)
                 .SetConfiguration(Configuration)
-                .SetOutputDirectory(OutputDirectory)
-                .SetVersion(GitVersion.MajorMinorPatch));
+                .SetOutputDirectory(BuildOutputDirectory)
+                .SetVersion(version)
+                .SetAssemblyVersion(GitVersion.MajorMinorPatch)
+                .SetFileVersion(GitVersion.MajorMinorPatch)
+                .SetInformationalVersion(version)
+                .SetProperty("VatSysPath", VatSysExePath.Parent.Parent));
         });
-    
+
+    Target Uninstall => _ => _
+        .Requires(() => ProfileName)
+        .Executes(() =>
+        {
+            var pluginsDirectory = GetVatSysPluginsDirectory(ProfileName);
+            AbsolutePath[] pluginDirectories =
+            [
+                pluginsDirectory / DebugPluginName,
+                pluginsDirectory / ReleasePluginName
+            ];
+
+            foreach (var pluginDirectory in pluginDirectories)
+            {
+                pluginDirectory.DeleteDirectory();
+                Log.Information("Plugin uninstalled from {Directory}", pluginDirectory);
+            }
+        });
+
+    Target Install => _ => _
+        .Requires(() => ProfileName)
+        .DependsOn(Compile)
+        .DependsOn(Uninstall)
+        .Executes(() =>
+        {
+            var pluginsDirectory = GetVatSysPluginsDirectory(ProfileName);
+            Log.Information("Installing plugin to {TargetDirectory}", pluginsDirectory);
+
+            if (!pluginsDirectory.Exists())
+                pluginsDirectory.CreateDirectory();
+
+            // Copy plugin assemblies
+            var pluginDirectory = pluginsDirectory / PluginName;
+            pluginDirectory.CreateOrCleanDirectory();
+            foreach (var absolutePath in BuildOutputDirectory.GetFiles())
+            {
+                absolutePath.CopyToDirectory(pluginDirectory, ExistsPolicy.MergeAndOverwrite);
+            }
+
+            Log.Information("Plugin installed to {PluginsDirectory}", pluginDirectory);
+        });
+
     Target Package => _ => _
         .DependsOn(Compile)
         .Requires(() => Configuration == Configuration.Release)
-        .Produces(OutputDirectory / "*.zip")
         .Executes(() =>
         {
-            var readmeFile = RootDirectory / "README.md";
+            PackageDirectory.CreateOrCleanDirectory();
 
-            readmeFile.CopyToDirectory(OutputDirectory, ExistsPolicy.FileOverwrite);
-            
-            Log.Information("Packaging {OutputDirectory} to {ZipPath}", OutputDirectory, ZipFile);
-            OutputDirectory.ZipTo(ZipFile);
-        });
-    
-    Target Install => _ => _
-        .DependsOn(Compile)
-        .Executes(() =>
-        {
-            if (DebugOutputDirectory is null)
+            // Copy plugin assemblies
+            foreach (var absolutePath in BuildOutputDirectory.GetFiles())
             {
-                Log.Error("Could not find the debug output path. Please ensure the registry key exists.");
-                return;
+                absolutePath.CopyToDirectory(PackageDirectory, ExistsPolicy.MergeAndOverwrite);
             }
 
-            DebugOutputDirectory.CreateOrCleanDirectory();
-            OutputDirectory.CopyToDirectory(DebugOutputDirectory);
+            if (ZipPath.FileExists())
+                ZipPath.DeleteFile();
 
-            Log.Information("Plugin installed to {PluginPath}", DebugOutputDirectory);
-        });
-    
-    Target SetupGithubActor => _ => _
-        .Executes(() =>
-        {
-            var actor = Environment.GetEnvironmentVariable("GITHUB_ACTOR");
-            GitTasks.Git($"config --global user.name '{actor}'");
-            GitTasks.Git($"config --global user.email '{actor}@github.com'");
-            if (IsServerBuild)
-            {
-                GitTasks.Git($"remote set-url origin https://{actor}:{GithubToken}@github.com/{gitRepository.GetGitHubOwner()}/{gitRepository.GetGitHubName()}.git");
-            }
+            Log.Information("Packaging {OutputDirectory} to {ZipPath}", PackageDirectory, ZipPath);
+            PackageDirectory.ZipTo(ZipPath);
         });
 
-    Target TagRelease => _ => _
-        .OnlyWhenDynamic(() => gitRepository.IsOnMainOrMasterBranch())
-        .OnlyWhenDynamic(() => !string.IsNullOrWhiteSpace(GithubToken))
-        .DependsOn(Package)
-        .DependsOn(SetupGithubActor)
-        .Executes(() =>
-        {
-            var version = GitVersion.MajorMinorPatch;
-            
-            // Delete the existing "latest" tag
-            GitTasks.Git("tag -d latest");
-            GitTasks.Git("push origin --tags");
-            
-            // Create a new tag for the current version and set "latest" to point to it
-            GitTasks.Git($"tag {version}");
-            GitTasks.Git($"tag latest");
-            GitTasks.Git("push origin --tags");
-        });
-
-    Target SetupGitHubClient => _ => _
-        .OnlyWhenDynamic(() => gitRepository.IsOnMainOrMasterBranch())
-        .OnlyWhenDynamic(() => !string.IsNullOrWhiteSpace(GithubToken))
-        .DependsOn(SetupGithubActor)
-        .Executes(() =>
-        {
-            gitHubClient = new GitHubClient(new ProductHeaderValue("Nuke"));
-            var tokenAuth = new Credentials(GithubToken);
-            gitHubClient.Credentials = tokenAuth;
-        });
-    
     Target Release => _ => _
-        .OnlyWhenDynamic(() => gitRepository.IsOnMainOrMasterBranch())
-        .OnlyWhenDynamic(() => !string.IsNullOrWhiteSpace(GithubToken))
         .DependsOn(Package)
-        .DependsOn(TagRelease)
-        .DependsOn(SetupGitHubClient)
+        .Requires(() => GitHubToken)
+        .Requires(() => GitRepository)
+        .Requires(() => Configuration == Configuration.Release)
         .Executes(async () =>
         {
-            var release = await gitHubClient.Repository.Release.Create(
-                gitRepository.GetGitHubOwner(),
-                gitRepository.GetGitHubName(),
-                new NewRelease(GitVersion.MajorMinorPatch)
-                {
-                    Draft = true,
-                    Name = gitRepository.IsOnMainOrMasterBranch()
-                        ? $"{GitVersion.MajorMinorPatch}"
-                        : $"{GitVersion.SemVer}",
-                    TargetCommitish = GitVersion.Sha
-                });
-            
-            Log.Information($"Release {release.Name} created");
-            
-            var fileName = $"Plugin.zip";
-            var fileStream = File.OpenRead(ZipFile);
-            await gitHubClient.Repository.Release.UploadAsset(
-                release,
-                new ReleaseAssetUpload(fileName, "application/zip", fileStream, TimeSpan.FromSeconds(5)));
-            
-            Log.Information($"{fileName} uploaded");
+            var version = GetSemanticVersion();
+            var tagName = $"v{version}";
+
+            Log.Information("Creating GitHub release {TagName}", tagName);
+
+            var credentials = new Credentials(GitHubToken);
+            var githubClient = new GitHubClient(new ProductHeaderValue("nuke-build"))
+            {
+                Credentials = credentials
+            };
+
+            var repositoryOwner = GitRepository.GetGitHubOwner();
+            var repositoryName = GitRepository.GetGitHubName();
+
+            var newRelease = new NewRelease(tagName)
+            {
+                Name = version,
+                Draft = false,
+                Prerelease = false,
+                GenerateReleaseNotes = true
+            };
+
+            var release = await githubClient.Repository.Release.Create(repositoryOwner, repositoryName, newRelease);
+            Log.Information("Release created: {ReleaseUrl}", release.HtmlUrl);
+
+            // Upload the zip file as an asset
+            using var zipStream = File.OpenRead(ZipPath);
+            var assetUpload = new ReleaseAssetUpload
+            {
+                FileName = ZipPath.Name,
+                ContentType = "application/zip",
+                RawData = zipStream
+            };
+
+            var asset = await githubClient.Repository.Release.UploadAsset(release, assetUpload);
+            Log.Information("Asset uploaded: {AssetUrl}", asset.BrowserDownloadUrl);
         });
+
+    static AbsolutePath GetVatSysPluginsDirectory(string profileName)
+    {
+        return GetVatSysProfilePath(profileName) / "Plugins";
+    }
+
+    static AbsolutePath GetVatSysProfilePath(string profileName)
+    {
+        var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        return Path.Combine(documentsPath, "vatSys Files", "Profiles", profileName);
+    }
+
+    private string GetSemanticVersion()
+    {
+        // For main/master branch: use major.minor.patch (e.g., "1.2.3")
+        if (GitVersion.BranchName is "main" or "master")
+        {
+            return GitVersion.MajorMinorPatch;
+        }
+
+        // For feature branches: use major.minor.patch-feature-name (e.g., "1.2.3-feature-name")
+        if (GitVersion.BranchName.StartsWith("feature/") || GitVersion.BranchName.StartsWith("features/"))
+        {
+            var featureName = GitVersion.BranchName
+                .Replace("feature/", "")
+                .Replace("features/", "")
+                .Replace("/", "-")
+                .Replace("_", "-");
+            return $"{GitVersion.MajorMinorPatch}-{featureName}";
+        }
+
+        // For other branches (develop, hotfix, etc.): use SemVer format
+        return GitVersion.SemVer;
+    }
 }

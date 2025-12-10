@@ -16,7 +16,13 @@ public class Plugin : IPlugin
     
     bool _isFullscreen;
     
-    public string Name => "Fullscreen Plugin";
+#if DEBUG
+    public const string Name = "Fullscreen Plugin - Debug";
+#else
+    public const string Name = "Fullscreen Plugin";
+#endif
+
+    string IPlugin.Name => Name;
 
     public void OnFDRUpdate(FDP2.FDR updated) { }
 
